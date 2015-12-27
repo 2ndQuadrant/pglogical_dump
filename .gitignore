@@ -1,5 +1,2 @@
-/kwlookup.c
-
-/pg_dump
-/pg_dumpall
-/pg_restore
+*.o
+pglogical_dump
