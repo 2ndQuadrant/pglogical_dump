@@ -141,7 +141,7 @@ static int	serializable_deferrable = 0;
 
 static void help(const char *progname);
 static void setup_connection(Archive *AH, const char *dumpencoding,
-				 char *use_role);
+				 const char *dumpsnapshot, char *use_role);
 static ArchiveFormat parseArchiveFormat(const char *format, ArchiveMode *mode);
 static void expand_schema_name_patterns(Archive *fout,
 							SimpleStringList *patterns,
@@ -279,6 +279,7 @@ main(int argc, char **argv)
 	const char *pgport = NULL;
 	const char *username = NULL;
 	const char *dumpencoding = NULL;
+	const char *dumpsnapshot = NULL;
 	bool		oids = false;
 	TableInfo  *tblinfo;
 	int			numTables;
@@ -355,6 +356,7 @@ main(int argc, char **argv)
 		{"role", required_argument, NULL, 3},
 		{"section", required_argument, NULL, 5},
 		{"serializable-deferrable", no_argument, &serializable_deferrable, 1},
+		{"snapshot", required_argument, NULL, 6},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"no-security-labels", no_argument, &no_security_labels, 1},
 		{"no-synchronized-snapshots", no_argument, &no_synchronized_snapshots, 1},
@@ -541,6 +543,10 @@ main(int argc, char **argv)
 				set_dump_section(optarg, &dumpSections);
 				break;
 
+			case 6:				/* snapshot */
+				dumpsnapshot = pg_strdup(optarg);
+				break;
+
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit_nicely(1);
@@ -649,7 +655,7 @@ main(int argc, char **argv)
 	 * death.
 	 */
 	ConnectDatabase(fout, dbname, pghost, pgport, username, prompt_password);
-	setup_connection(fout, dumpencoding, use_role);
+	setup_connection(fout, dumpencoding, dumpsnapshot, use_role);
 
 	/*
 	 * Disable security label support if server version < v9.1.x (prevents
@@ -692,6 +698,11 @@ main(int argc, char **argv)
 		 "Synchronized snapshots are not supported by this server version.\n"
 		  "Run with --no-synchronized-snapshots instead if you do not need\n"
 					  "synchronized snapshots.\n");
+
+	/* check the version when a snapshot is explicitly specified by user */
+	if (dumpsnapshot && fout->remoteVersion < 90200)
+		exit_horribly(NULL,
+					  "Exported snapshots are not supported by this server version.\n");
 
 	/* Find the last built-in OID, if needed */
 	if (fout->remoteVersion < 70300)
@@ -913,6 +924,7 @@ help(const char *progname)
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
 	printf(_("  --section=SECTION            dump named section (pre-data, data, or post-data)\n"));
 	printf(_("  --serializable-deferrable    wait until the dump can run without anomalies\n"));
+	printf(_("  --snapshot=SNAPSHOT          use given synchronous snapshot for the dump\n"));
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
@@ -932,7 +944,8 @@ help(const char *progname)
 }
 
 static void
-setup_connection(Archive *AH, const char *dumpencoding, char *use_role)
+setup_connection(Archive *AH, const char *dumpencoding,
+				 const char *dumpsnapshot, char *use_role)
 {
 	PGconn	   *conn = GetConnection(AH);
 	const char *std_strings;
@@ -1049,27 +1062,32 @@ setup_connection(Archive *AH, const char *dumpencoding, char *use_role)
 							"SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
 
 
+	/*
+	 * define an export snapshot, either chosen by user or needed for
+	 * parallel dump.
+	 */
+	if (dumpsnapshot)
+		AH->sync_snapshot_id = strdup(dumpsnapshot);
 
-	if (AH->numWorkers > 1 && AH->remoteVersion >= 90200 && !no_synchronized_snapshots)
+
+	if (AH->sync_snapshot_id)
 	{
-		if (AH->sync_snapshot_id)
-		{
-			PQExpBuffer query = createPQExpBuffer();
-
-			appendPQExpBufferStr(query, "SET TRANSACTION SNAPSHOT ");
-			appendStringLiteralConn(query, AH->sync_snapshot_id, conn);
-			ExecuteSqlStatement(AH, query->data);
-			destroyPQExpBuffer(query);
-		}
-		else
-			AH->sync_snapshot_id = get_synchronized_snapshot(AH);
+		PQExpBuffer query = createPQExpBuffer();
+		appendPQExpBuffer(query, "SET TRANSACTION SNAPSHOT ");
+		appendStringLiteralConn(query, AH->sync_snapshot_id, conn);
+		ExecuteSqlStatement(AH, query->data);
+		destroyPQExpBuffer(query);
 	}
+	else if (AH->numWorkers > 1 &&
+			 AH->remoteVersion >= 90200 &&
+			 !no_synchronized_snapshots)
+		AH->sync_snapshot_id = get_synchronized_snapshot(AH);
 }
 
 static void
 setupDumpWorker(Archive *AHX, RestoreOptions *ropt)
 {
-	setup_connection(AHX, NULL, NULL);
+	setup_connection(AHX, NULL, NULL, NULL);
 }
 
 static char *
