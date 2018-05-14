@@ -10,6 +10,7 @@
  *-------------------------------------------------------------------------
  */
 
+#include "fe_utils/connect.h"
 #include "pg_backup_db.h"
 #include "pg_backup_utils.h"
 #include "dumputils.h"
@@ -90,8 +91,16 @@ ReconnectToServer(ArchiveHandle *AH, const char *dbname, const char *username)
 
 	newConn = _connectDB(AH, newdbname, newusername);
 
+	/* Update ArchiveHandle's connCancel before closing old connection */
+	set_archive_cancel_info(AH, newConn);
+
 	PQfinish(AH->connection);
 	AH->connection = newConn;
+
+	/* Start strict; later phases may override this. */
+	if (PQserverVersion(AH->connection) >= 70300)
+		PQclear(ExecuteSqlQueryForSingleRow((Archive *) AH,
+											ALWAYS_SECURE_SEARCH_PATH_SQL));
 
 	return 1;
 }
@@ -108,6 +117,7 @@ ReconnectToServer(ArchiveHandle *AH, const char *dbname, const char *username)
 static PGconn *
 _connectDB(ArchiveHandle *AH, const char *reqdb, const char *requser)
 {
+	PQExpBufferData connstr;
 	PGconn	   *newConn;
 	const char *newdb;
 	const char *newuser;
@@ -136,6 +146,10 @@ _connectDB(ArchiveHandle *AH, const char *reqdb, const char *requser)
 			exit_horribly(modulename, "out of memory\n");
 	}
 
+	initPQExpBuffer(&connstr);
+	appendPQExpBuffer(&connstr, "dbname=");
+	appendConnStrVal(&connstr, newdb);
+
 	do
 	{
 		const char *keywords[7];
@@ -150,7 +164,7 @@ _connectDB(ArchiveHandle *AH, const char *reqdb, const char *requser)
 		keywords[3] = "password";
 		values[3] = password;
 		keywords[4] = "dbname";
-		values[4] = newdb;
+		values[4] = connstr.data;
 		keywords[5] = "fallback_application_name";
 		values[5] = progname;
 		keywords[6] = NULL;
@@ -201,6 +215,8 @@ _connectDB(ArchiveHandle *AH, const char *reqdb, const char *requser)
 	}
 	if (password)
 		free(password);
+
+	termPQExpBuffer(&connstr);
 
 	/* check for version mismatch */
 	_check_database_version(AH);
@@ -294,6 +310,11 @@ ConnectDatabase(Archive *AHX,
 					  PQdb(AH->connection) ? PQdb(AH->connection) : "",
 					  PQerrorMessage(AH->connection));
 
+	/* Start strict; later phases may override this. */
+	if (PQserverVersion(AH->connection) >= 70300)
+		PQclear(ExecuteSqlQueryForSingleRow((Archive *) AH,
+											ALWAYS_SECURE_SEARCH_PATH_SQL));
+
 	/*
 	 * We want to remember connection's actual password, whether or not we got
 	 * it by prompting.  So we don't just store the password variable.
@@ -311,6 +332,9 @@ ConnectDatabase(Archive *AHX,
 	_check_database_version(AH);
 
 	PQsetNoticeProcessor(AH->connection, notice_processor, NULL);
+
+	/* arrange for SIGINT to issue a query cancel on this connection */
+	set_archive_cancel_info(AH, AH->connection);
 }
 
 /*
@@ -321,19 +345,25 @@ void
 DisconnectDatabase(Archive *AHX)
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
-	PGcancel   *cancel;
 	char		errbuf[1];
 
 	if (!AH->connection)
 		return;
 
-	if (PQtransactionStatus(AH->connection) == PQTRANS_ACTIVE)
+	if (AH->connCancel)
 	{
-		if ((cancel = PQgetCancel(AH->connection)))
-		{
-			PQcancel(cancel, errbuf, sizeof(errbuf));
-			PQfreeCancel(cancel);
-		}
+		/*
+		 * If we have an active query, send a cancel before closing, ignoring
+		 * any errors.  This is of no use for a normal exit, but might be
+		 * helpful during exit_horribly().
+		 */
+		if (PQtransactionStatus(AH->connection) == PQTRANS_ACTIVE)
+			(void) PQcancel(AH->connCancel, errbuf, sizeof(errbuf));
+
+		/*
+		 * Prevent signal handler from sending a cancel after this.
+		 */
+		set_archive_cancel_info(AH, NULL);
 	}
 
 	PQfinish(AH->connection);
@@ -384,6 +414,29 @@ ExecuteSqlQuery(Archive *AHX, const char *query, ExecStatusType status)
 	res = PQexec(AH->connection, query);
 	if (PQresultStatus(res) != status)
 		die_on_query_failure(AH, modulename, query);
+	return res;
+}
+
+/*
+ * Execute an SQL query and verify that we got exactly one row back.
+ */
+PGresult *
+ExecuteSqlQueryForSingleRow(Archive *fout, char *query)
+{
+	PGresult   *res;
+	int			ntups;
+
+	res = ExecuteSqlQuery(fout, query, PGRES_TUPLES_OK);
+
+	/* Expecting a single result only */
+	ntups = PQntuples(res);
+	if (ntups != 1)
+		exit_horribly(NULL,
+					  ngettext("query returned %d row instead of one: %s\n",
+							   "query returned %d rows instead of one: %s\n",
+							   ntups),
+					  ntups, query);
+
 	return res;
 }
 
@@ -587,6 +640,11 @@ EndDBCopyMode(ArchiveHandle *AH, TocEntry *te)
 			warn_or_exit_horribly(AH, modulename, "COPY failed for table \"%s\": %s",
 								  te->tag, PQerrorMessage(AH->connection));
 		PQclear(res);
+
+		/* Do this to ensure we've pumped libpq back to idle state */
+		if (PQgetResult(AH->connection) != NULL)
+			write_msg(NULL, "WARNING: unexpected extra results during COPY of table \"%s\"\n",
+					  te->tag);
 
 		AH->pgCopyIn = false;
 	}

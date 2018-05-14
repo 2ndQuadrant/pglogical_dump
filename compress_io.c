@@ -183,9 +183,6 @@ void
 WriteDataToArchive(ArchiveHandle *AH, CompressorState *cs,
 				   const void *data, size_t dLen)
 {
-	/* Are we aborting? */
-	checkAborting(AH);
-
 	switch (cs->comprAlg)
 	{
 		case COMPR_ALG_LIBZ:
@@ -350,9 +347,6 @@ ReadDataFromArchiveZlib(ArchiveHandle *AH, ReadFunc readF)
 	/* no minimal chunk size for zlib */
 	while ((cnt = readF(AH, &buf, &buflen)))
 	{
-		/* Are we aborting? */
-		checkAborting(AH);
-
 		zp->next_in = (void *) buf;
 		zp->avail_in = cnt;
 
@@ -413,9 +407,6 @@ ReadDataFromArchiveNone(ArchiveHandle *AH, ReadFunc readF)
 
 	while ((cnt = readF(AH, &buf, &buflen)))
 	{
-		/* Are we aborting? */
-		checkAborting(AH);
-
 		ahwrite(buf, 1, cnt, AH);
 	}
 
@@ -601,8 +592,14 @@ cfread(void *ptr, int size, cfp *fp)
 	{
 		ret = gzread(fp->compressedfp, ptr, size);
 		if (ret != size && !gzeof(fp->compressedfp))
+		{
+			int		errnum;
+			const char *errmsg = gzerror(fp->compressedfp, &errnum);
+
 			exit_horribly(modulename,
-					"could not read from input file: %s\n", strerror(errno));
+						  "could not read from input file: %s\n",
+						  errnum == Z_ERRNO ? strerror(errno) : errmsg);
+		}
 	}
 	else
 #endif
@@ -702,6 +699,22 @@ cfeof(cfp *fp)
 	else
 #endif
 		return feof(fp->uncompressedfp);
+}
+
+const char *
+get_cfp_error(cfp *fp)
+{
+#ifdef HAVE_LIBZ
+	if (fp->compressedfp)
+	{
+		int			errnum;
+		const char *errmsg = gzerror(fp->compressedfp, &errnum);
+
+		if (errnum != Z_ERRNO)
+			return errmsg;
+	}
+#endif
+	return strerror(errno);
 }
 
 #ifdef HAVE_LIBZ
