@@ -9,7 +9,7 @@ OBJS	= pg_dump.o common.o pg_dump_sort.o \
 	keywords.o kwlookup.o tar.o $(WIN32RES)
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
-PG_LIBS = $(libpq_pgport)
+PG_LIBS = -L$(pkglibdir) $(libpq_pgport)
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
