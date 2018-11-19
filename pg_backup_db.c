@@ -10,7 +10,6 @@
  *-------------------------------------------------------------------------
  */
 
-#include "fe_utils/connect.h"
 #include "pg_backup_db.h"
 #include "pg_backup_utils.h"
 #include "dumputils.h"
