@@ -685,7 +685,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te, RestoreOptions *ropt)
 	 * If we're writing the special restore.sql script, emit a suitable
 	 * command to include each table's data from the corresponding file.
 	 *
-	 * In the COPY case this is a bit klugy because the regular COPY command
+	 * In the COPY case this is a bit kludgy because the regular COPY command
 	 * was already printed before we get control.
 	 */
 	if (ctx->isSpecialScript)

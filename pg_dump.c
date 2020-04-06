@@ -804,7 +804,7 @@ main(int argc, char **argv)
 	/*
 	 * In binary-upgrade mode, we do not have to worry about the actual blob
 	 * data or the associated metadata that resides in the pg_largeobject and
-	 * pg_largeobject_metadata tables, respectivly.
+	 * pg_largeobject_metadata tables, respectively.
 	 *
 	 * However, we do need to collect blob information as there may be
 	 * comments or other information on blobs that we do need to dump out.
@@ -1086,7 +1086,7 @@ setup_connection(Archive *AH, const char *dumpencoding,
 		 * passed a snapshot.  As long as the snapshot is acquired in a
 		 * SERIALIZABLE, READ ONLY, DEFERRABLE transaction, its use within a
 		 * REPEATABLE READ transaction provides the appropriate integrity
-		 * guarantees.  This is a kluge, but safe for back-patching.
+		 * guarantees.  This is a kludge, but safe for back-patching.
 		 */
 		if (serializable_deferrable && AH->sync_snapshot_id == NULL)
 			ExecuteSqlStatement(AH,
@@ -1608,7 +1608,7 @@ dumpTableData_copy(Archive *fout, void *dcontext)
 	{
 		/* Note: this syntax is only supported in 8.2 and up */
 		appendPQExpBufferStr(q, "COPY (SELECT ");
-		/* klugery to get rid of parens in column list */
+		/* kludgery to get rid of parens in column list */
 		if (strlen(column_list) > 2)
 		{
 			appendPQExpBufferStr(q, column_list + 1);
@@ -1914,7 +1914,7 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 	{
 		/* Dump/restore using COPY */
 		dumpFn = dumpTableData_copy;
-		/* must use 2 steps here 'cause fmtId is nonreentrant */
+		/* must use 2 steps here 'cause fmtId is non-reentrant */
 		appendPQExpBuffer(copyBuf, "COPY %s ",
 						  fmtQualifiedDumpable(tbinfo));
 		appendPQExpBuffer(copyBuf, "%s %sFROM stdin;\n",

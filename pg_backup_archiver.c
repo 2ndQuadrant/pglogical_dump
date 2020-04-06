@@ -1078,7 +1078,7 @@ PrintTOCSummary(Archive *AHX, RestoreOptions *ropt)
 			 * one physical output line.  This prevents confusion when the
 			 * file is read by "pg_restore -L".  Note that we currently don't
 			 * bother to quote names, meaning that the name fields aren't
-			 * automatically parseable.  "pg_restore -L" doesn't care because
+			 * automatically parsable.  "pg_restore -L" doesn't care because
 			 * it only examines the dumpId field, but someday we might want to
 			 * try harder.
 			 */

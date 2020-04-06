@@ -183,7 +183,7 @@ fmtQualifiedId(int remoteVersion, const char *schema, const char *id)
  * returned by PQserverVersion()) as a string.  This exists mainly to
  * encapsulate knowledge about two-part vs. three-part version numbers.
  *
- * For re-entrancy, caller must supply the buffer the string is put in.
+ * For reentrancy, caller must supply the buffer the string is put in.
  * Recommended size of the buffer is 32 bytes.
  *
  * Returns address of 'buf', as a notational convenience.
@@ -310,7 +310,7 @@ appendStringLiteralConn(PQExpBuffer buf, const char *str, PGconn *conn)
 	size_t		length = strlen(str);
 
 	/*
-	 * XXX This is a kluge to silence escape_string_warning in our utility
+	 * XXX This is a kludge to silence escape_string_warning in our utility
 	 * programs.  It should go away someday.
 	 */
 	if (strchr(str, '\\') != NULL && PQserverVersion(conn) >= 80100)
@@ -322,7 +322,7 @@ appendStringLiteralConn(PQExpBuffer buf, const char *str, PGconn *conn)
 		appendStringLiteral(buf, str, PQclientEncoding(conn), false);
 		return;
 	}
-	/* XXX end kluge */
+	/* XXX end kludge */
 
 	if (!enlargePQExpBuffer(buf, 2 * length + 2))
 		return;
@@ -1003,9 +1003,9 @@ buildDefaultACLCommands(const char *type, const char *nspname,
  *		group groupname=privilegecodes/grantor
  * (the /grantor part will not be present if pre-7.4 database).
  *
- * The returned grantee string will be the dequoted username or groupname
+ * The returned grantee string will be the unquoted username or groupname
  * (preceded with "group " in the latter case).  The returned grantor is
- * the dequoted grantor name or empty.  Privilege characters are decoded
+ * the unquoted grantor name or empty.  Privilege characters are decoded
  * and split between privileges with grant option (privswgo) and without
  * (privs).
  *
@@ -1171,7 +1171,7 @@ do { \
 
 /*
  * Transfer a user or group name starting at *input into the output buffer,
- * dequoting if needed.  Returns a pointer to just past the input name.
+ * unquoting if needed.  Returns a pointer to just past the input name.
  * The name is taken to end at an unquoted '=' or end of string.
  */
 static char *
