@@ -4,7 +4,7 @@
  *
  *	Implements the custom output format.
  *
- *	The comments with the routined in this code are a good place to
+ *	The comments with the routine in this code are a good place to
  *	understand how to write a new format.
  *
  *	See the headers to pg_restore for more details.
@@ -687,7 +687,7 @@ _ReadBuf(ArchiveHandle *AH, void *buf, size_t len)
  * the process of saving it to files. No data should be written prior
  * to this point, since the user could sort the TOC after creating it.
  *
- * If an archive is to be written, this toutine must call:
+ * If an archive is to be written, this routine must call:
  *		WriteHead			to save the archive header
  *		WriteToc			to save the TOC entries
  *		WriteDataChunks		to save all DATA & BLOBs.
